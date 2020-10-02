@@ -1,0 +1,71 @@
+-- These are some thoughts from the MGB team and are not meant to be a complete implementation guide --
+
+1) Install simpleSAMLphp, add the corp IDP metadata & cert.
+
+2) The /var/simpleSAMLphp/www/relayState.php may need to be appended (after the php closing tag of “?>”) as following:
+<form name="myform" method="post" action="https://<?php echo $location ?>">
+  <input type="hidden" name="text" value="<?php echo $response; ?>"/>
+  <input type="hidden" name="em" value="<?php echo $username; ?>"/>
+  <input style="display:none" name ="Submit" type"submit" value"Submit">
+</form>
+<script>
+  document.myform.submit();
+</script>
+
+3) Update the /var/www/html/index.html (on your WC server) to always route any URL addressed to your WC server domain to “/default.php”: e.g.  if https://www.XXXXX.org/ then reroute to https://www/XXXX.org/default.php/
+You’ll have to update your i2b2 WC’s /index.php to always point to /default.php (instead of default.htm) as the default starting page.
+Default.php is needed in order to add the processing of passed-in params 
+
+4) Then add the following php & js code segments to /default.php :
+                //after <title> … </title>
+<?php
+                // Retrieve the PHP variable (using PHP).
+                $response = $_POST['text'];
+                $username = $_POST['em'];
+?>
+ 
+                               //after /******************** INITIALIZE ********************/
+var respXml = '';
+var respEmail = '';
+ 
+respXml = "<?php echo $response ?>";
+respEmail = "<?php echo $username ?>";
+ 
+if (respEmail.length > 0 && respEmail != 'undefined') {
+   //swc20200428 IB-447 (Remove need for default.htm)
+                try {
+                    respEmail = atob(respEmail);
+                } catch (err) { respXml = ''; } //take care of case when page is 1st browsed to
+   //swc20200428 IB-447 end
+}
+ 
+                               //update initI2B2(), per the highlighted portion
+function initI2B2() 
+{
+                i2b2.events.afterCellInit.subscribe(
+                                (function(en,co,a) {
+                                                var cellObj = co[0];
+                                                var cellCode = cellObj.cellCode;
+                                                switch (cellCode) {
+                                                                case "PM":
+                                                                                // This i2b2 design implementation uses a prebuild login DIV we connect the Project Management cell to
+                                                                                // handle this method of login, the other method used for login is the PM Cell's built in floating
+                                                                                // modal dialog box to prompt for login credentials.  You can edit the look and feel of this dialog box
+                                                                                // by editing the CSS file.  You can remark out the lines below with no ill effect.  Use the following
+                                                                                // javascript function to display the modal login form: i2b2.hive.PM.doLoginDialog();
+                                                                                //cellObj.doConnectForm($('loginusr'),$('loginpass'),$('logindomain'), $('loginsubmit'));                                  
+                                                                                if (respXml.length > 0) {
+                                                                                                i2b2.PM.doLoginDialog();
+                                                                                                $('i2b2_login_modal_dialog').hide();                                                                
+                                                                                                $('loginusr').value = respEmail;        
+                                                                                                $('loginpass').value = respXml;                                                                                         
+                                                                                                $('loginButton').click();
+                                                                                } else {
+                                                                                                i2b2.PM.doLoginDialog();
+                                                                                                $('loginpass').value = '';
+                                                                                }
+                                                                                break;
+                                                }
+                                })
+                );
+Bill’s module, “securityAuthenticationSAML.java, the one you’ll be sharing, would then be “The detailed okta login in steps”, step (6) I mentioned earlier.
